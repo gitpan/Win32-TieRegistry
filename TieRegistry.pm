@@ -6,15 +6,19 @@
 # Skip to "=head" line for user documentation.
 #
 
+
 package Win32::TieRegistry;
+
 
 use strict;
 use vars qw( $PACK $VERSION @ISA @EXPORT @EXPORT_OK );
 
 $PACK= "Win32::TieRegistry";	# Used in error messages.
-$VERSION= '0.22';		# to be Released after Jan 25, 1999
+$VERSION= '0.23';		# Released on July 03 1999
+
 
 use Carp;
+
 require Tie::Hash;
 @ISA= qw(Tie::Hash);
 
@@ -125,6 +129,7 @@ bless $Registry;
 
 # Preloaded methods go here.
 
+
 # Map option names to name of subroutine that controls that option:
 use vars qw( @_opt_subs %_opt_subs );
 @_opt_subs= qw( Delimiter ArrayValues TieValues SplitMultis DWordsToHex
@@ -229,6 +234,7 @@ sub import
     }
 }
 
+
 use vars qw( @_new_Opts %_new_Opts );
 @_new_Opts= qw( ACCESS DELIM MACHINE DEPENDON );
 @_new_Opts{@_new_Opts}= (1) x @_new_Opts;
@@ -266,7 +272,7 @@ sub _split
     my $path= shift( @_ );
     my $delim= @_ ? shift(@_) : $self->Delimiter;
     my $list= [ split( /\Q$delim/, $path ) ];
-    $list;
+    return $list;
 }
 
 
@@ -312,7 +318,7 @@ sub _open
     my $subKey= join( $this->OS_Delimiter, @$subPath );
     my $handle= 0;
     $this->RegOpenKeyEx( $subKey, 0, $sam, $handle )
-      or  return wantarray ? () : undef;
+      or  return ();
     return $this->_new( $handle, [ @{$this->_Path}, @$subPath ],
       { ACCESS=>$sam, ( defined($this->{UNLOADME}) ? ("DEPENDON",$this)
 	: defined($this->{DEPENDON}) ? ("DEPENDON",$this->{DEPENDON}) : () )
@@ -324,7 +330,23 @@ sub ObjectRef
 {
     my $self= shift(@_);
     $self= tied(%$self)   if  tied(%$self);
-    $self;
+    return $self;
+}
+
+
+sub _constant
+{
+    my( $name, $desc )= @_;
+    my $value= Win32API::Registry::constant( $name, 0 );
+    my $func= (caller(1))[3];
+    if(  0 == $value  ) {
+	if(  $! =~ /invalid/i  ) {
+	    croak "$func: Invalid $desc ($name)";
+	} elsif(  0 != $!  ) {
+	    croak "$func: \u$desc ($name) not support on this platform";
+	}
+    }
+    return $value;
 }
 
 
@@ -338,9 +360,9 @@ sub _connect
     my $handle= 0;
     my( $temp )= $this->_rootKey( [@$subPath] );
     $temp->RegConnectRegistry( $machine, $temp->Handle, $handle )
-      or  return wantarray ? () : undef;
+      or  return ();
     my $self= $this->_new( $handle, [shift(@$subPath)], {MACHINE=>$machine} );
-    ( $self, $subPath );
+    return( $self, $subPath );
 }
 
 
@@ -370,11 +392,11 @@ sub Connect
     $delim= "$opts->{Delimiter}"   if  defined($opts->{Delimiter});
     $delim= $this->Delimiter   if  "" eq $delim;
     $sam= defined($opts->{Access}) ? $opts->{Access} : $this->Access;
-    $sam= Win32API::Registry::constant($sam,0)   if  $sam =~ /^KEY_/;
+    $sam= _constant($sam,"key access type")   if  $sam =~ /^KEY_/;
     ( $this, $subPath )= $this->_connect( $machine, $key );
-    return wantarray ? () : undef   unless  defined($this);
+    return ()   unless  defined($this);
     my $self= $this->_open( $subPath, $sam );
-    return wantarray ? () : undef   unless  defined($self);
+    return ()   unless  defined($self);
     $self->Delimiter( $delim );
     $self= $self->TiedRef   if  $tied;
     return $self;
@@ -390,7 +412,7 @@ sub _newVirtual
     my $self= shift(@_);
     my( $rPath, $root, $opts )= @_;
     my $new= $self->_new( "NONE", $rPath, $opts )
-      or  return wantarray ? () : undef;
+      or  return ();
     @{$new}{@_newVirtual_keys}= @{$root->ObjectRef}{@_newVirtual_keys};
     return $new;
 }
@@ -436,7 +458,7 @@ sub new
     $delim= $this->Delimiter   if  "" eq $delim;
     $dlen= length($delim);
     $sam= defined($opts->{Access}) ? $opts->{Access} : $this->Access;
-    $sam= Win32API::Registry::constant($sam,0)   if  $sam =~ /^KEY_/;
+    $sam= _constant($sam,"key access type")   if  $sam =~ /^KEY_/;
     if(  "ARRAY" eq ref($subKey)  ) {
 	$subPath= $subKey;
 	if(  "NONE" eq $this->Handle  &&  @$subPath  ) {
@@ -450,7 +472,7 @@ sub new
 			    {MACHINE=>$mach,DELIM=>$delim,ACCESS=>$sam} );
 	}
 	( $this, $subPath )= $this->_connect( $mach, $path );
-	return wantarray ? () : undef   if  ! defined($this);
+	return ()   if  ! defined($this);
 	if(  0 == @$subPath  ) {
 	    $this->Delimiter( $delim );
 	    return $this;
@@ -467,13 +489,13 @@ sub new
     } else {
 	$subPath= $this->_split( $subKey, $delim );
     }
-    return wantarray ? () : undef   unless  defined($this);
+    return ()   unless  defined($this);
     if(  0 == @$subPath  &&  "NONE" eq $this->Handle  ) {
 	return $this->_newVirtual( $this->_Path, $this,
 				   { DELIM=>$delim, ACCESS=>$sam } );
     }
     my $self= $this->_open( $subPath, $sam );
-    return wantarray ? () : undef   unless  defined($self);
+    return ()   unless  defined($self);
     $self->Delimiter( $delim );
     return $self;
 }
@@ -499,25 +521,24 @@ sub Clone
 
 
 { my @flush;
-
-sub Flush
-{
-    my $self= shift(@_);
-    $self= tied(%$self)   if  tied(%$self);
-    my( $flush )= @_;
-    @_  and  croak "Usage:  \$key->Flush( \$bFlush );";
-    return 0   if  "NONE" eq $self->Handle;
-    @flush= qw( VALUES SUBKEYS SUBCLASSES SUBTIMES MEMBERS Class
-		CntSubKeys CntValues MaxSubKeyLen MaxSubClassLen
-		MaxValNameLen MaxValDataLen SecurityLen LastWrite PREVIDX )
-      unless  @flush;
-    delete( @$self{@flush} );
-    if(  defined($flush)  &&  $flush  ) {
-	return $self->RegFlushKey();
-    } else {
-	return 1;
+    sub Flush
+    {
+	my $self= shift(@_);
+	$self= tied(%$self)   if  tied(%$self);
+	my( $flush )= @_;
+	@_  and  croak "Usage:  \$key->Flush( \$bFlush );";
+	return 0   if  "NONE" eq $self->Handle;
+	@flush= qw( VALUES SUBKEYS SUBCLASSES SUBTIMES MEMBERS Class
+		    CntSubKeys CntValues MaxSubKeyLen MaxSubClassLen
+		    MaxValNameLen MaxValDataLen SecurityLen LastWrite PREVIDX )
+	  unless  @flush;
+	delete( @$self{@flush} );
+	if(  defined($flush)  &&  $flush  ) {
+	    return $self->RegFlushKey();
+	} else {
+	    return 1;
+	}
     }
-}
 }
 
 
@@ -527,17 +548,17 @@ sub _DualVal
     if(  $_SetDualVar  &&  $$hRef{$num}  ) {
 	&SetDualVar( $num, "$$hRef{$num}", 0+$num );
     }
-    $num;
+    return $num;
 }
 
 
 use vars qw( @_RegDataTypes %_RegDataTypes );
-@_RegDataTypes= qw( REG_NONE REG_SZ REG_EXPAND_SZ REG_BINARY
-		    REG_DWORD_LITTLE_ENDIAN REG_DWORD_BIG_ENDIAN
-		    REG_DWORD REG_LINK REG_MULTI_SZ REG_RESOURCE_LIST
-		    REG_FULL_RESOURCE_DESCRIPTOR
-		    REG_RESOURCE_REQUIREMENTS_LIST );
-# Make sure REG_DWORD appears _after_ other REG_DWORD_* items above.
+@_RegDataTypes= qw( REG_SZ REG_EXPAND_SZ REG_BINARY REG_LINK REG_MULTI_SZ
+		    REG_DWORD_LITTLE_ENDIAN REG_DWORD_BIG_ENDIAN REG_DWORD
+		    REG_RESOURCE_LIST REG_FULL_RESOURCE_DESCRIPTOR
+		    REG_RESOURCE_REQUIREMENTS_LIST REG_NONE );
+# Make sure that REG_DWORD appears _after_ other REG_DWORD_*
+# items above and that REG_NONE appears _last_.
 foreach(  @_RegDataTypes  ) {
     $_RegDataTypes{Win32API::Registry::constant($_,0)}= $_;
 }
@@ -549,10 +570,10 @@ sub GetValue
     1 == @_  or  croak "Usage:  (\$data,\$type)= \$key->GetValue('ValName');";
     my( $valName )= @_;
     my( $valType, $valData, $dLen )= (0,"",0);
-    return wantarray ? () : undef   if  "NONE" eq $self->Handle;
+    return ()   if  "NONE" eq $self->Handle;
     $self->RegQueryValueEx( $valName, [], $valType, $valData,
       $dLen= ( defined($self->{MaxValDataLen}) ? $self->{MaxValDataLen} : 0 )
-    )  or  return wantarray ? () : undef;
+    )  or  return ();
     if(  REG_DWORD == $valType  ) {
 	my $val= unpack("L",$valData);
 	$valData= sprintf "0x%08.8lX", $val   if  $self->DWordsToHex;
@@ -601,33 +622,37 @@ sub _Err
 
 sub _NoMoreItems
 {
-    $_NoMoreItems =~ /^\d/
-       ?  _ErrNum == $_NoMoreItems
-       :  _ErrMsg =~ /$_NoMoreItems/io;
+    return
+      $_NoMoreItems =~ /^\d/
+        ?  _ErrNum == $_NoMoreItems
+        :  _ErrMsg =~ /$_NoMoreItems/io;
 }
 
 
 sub _FileNotFound
 {
-    $_FileNotFound =~ /^\d/
-       ?  _ErrNum == $_FileNotFound
-       :  _ErrMsg =~ /$_FileNotFound/io;
+    return
+      $_FileNotFound =~ /^\d/
+        ?  _ErrNum == $_FileNotFound
+        :  _ErrMsg =~ /$_FileNotFound/io;
 }
 
 
 sub _TooSmall
 {
-    $_TooSmall =~ /^\d/
-       ?  _ErrNum == $_TooSmall
-       :  _ErrMsg =~ /$_TooSmall/io;
+    return
+      $_TooSmall =~ /^\d/
+        ?  _ErrNum == $_TooSmall
+        :  _ErrMsg =~ /$_TooSmall/io;
 }
 
 
 sub _MoreData
 {
-    $_MoreData =~ /^\d/
-       ?  _ErrNum == $_MoreData
-       :  _ErrMsg =~ /$_MoreData/io;
+    return
+      $_MoreData =~ /^\d/
+        ?  _ErrNum == $_MoreData
+        :  _ErrMsg =~ /$_MoreData/io;
 }
 
 
@@ -643,10 +668,10 @@ sub _enumValues
 	push( @names, $name );
     }
     if(  ! _NoMoreItems()  ) {
-	return wantarray ? () : undef;
+	return ();
     }
     $self->{VALUES}= \@names;
-    1;
+    return 1;
 }
 
 
@@ -677,12 +702,12 @@ sub _enumSubKeys
 	push( @times, $time );
     }
     if(  ! _NoMoreItems()  ) {
-	return wantarray ? () : undef;
+	return ();
     }
     $self->{SUBKEYS}= \@subkeys;
     $self->{SUBCLASSES}= \@classes;
     $self->{SUBTIMES}= \@times;
-    1;
+    return 1;
 }
 
 
@@ -763,7 +788,7 @@ sub Information
     my $clen= 8;
     if(  ! $self->RegQueryInfoKey( [], [], $nkeys, $xkey, $xcls,
 				   $nvals, $xname, $xdata, $xsec, $time )  ) {
-	return wantarray ? () : undef;
+	return ();
     }
     if(  defined($self->{Class})  ) {
 	$clen= length($self->{Class});
@@ -807,7 +832,7 @@ sub Delimiter
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldDelim= \$key->Delimiter(\$newDelim);";
     }
-    $oldDelim;
+    return $oldDelim;
 }
 
 
@@ -817,7 +842,7 @@ sub Handle
     $self= tied(%$self)   if  tied(%$self);
     @_  and  croak "Usage:  \$handle= \$key->Handle;";
     $self= $RegObj   unless  ref($self);
-    $self->{HANDLE};
+    return $self->{HANDLE};
 }
 
 
@@ -829,11 +854,11 @@ sub Path
     my $delim= $self->{DELIM};
     $self= $RegObj   unless  ref($self);
     if(  "" eq $self->{MACHINE}  ) {
-	$delim . join( $delim, @{$self->{PATH}} ) . $delim;
+	return(  $delim . join( $delim, @{$self->{PATH}} ) . $delim  );
     } else {
-	$delim x 2
+	return(  $delim x 2
 	  . join( $delim, $self->{MACHINE}, @{$self->{PATH}} )
-	  . $delim;
+	  . $delim  );
     }
 }
 
@@ -844,7 +869,7 @@ sub _Path
     $self= tied(%$self)   if  tied(%$self);
     @_  and  croak "Usage:  \$arrRef= \$key->_Path;";
     $self= $RegObj   unless  ref($self);
-    $self->{PATH};
+    return $self->{PATH};
 }
 
 
@@ -854,7 +879,7 @@ sub Machine
     $self= tied(%$self)   if  tied(%$self);
     @_  and  croak "Usage:  \$machine= \$key->Machine;";
     $self= $RegObj   unless  ref($self);
-    $self->{MACHINE};
+    return $self->{MACHINE};
 }
 
 
@@ -864,7 +889,7 @@ sub Access
     $self= tied(%$self)   if  tied(%$self);
     @_  and  croak "Usage:  \$access= \$key->Access;";
     $self= $RegObj   unless  ref($self);
-    $self->{ACCESS};
+    return $self->{ACCESS};
 }
 
 
@@ -872,7 +897,7 @@ sub OS_Delimiter
 {
     my $self= shift(@_);
     @_  and  croak "Usage:  \$backslash= \$key->OS_Delimiter;";
-    $self->{OS_DELIM};
+    return $self->{OS_DELIM};
 }
 
 
@@ -882,7 +907,7 @@ sub _Roots
     $self= tied(%$self)   if  ref($self)  &&  tied(%$self);
     @_  and  croak "Usage:  \$varName= \$key->_Roots;";
     $self= $RegObj   unless  ref($self);
-    $self->{ROOTS};
+    return $self->{ROOTS};
 }
 
 
@@ -892,7 +917,7 @@ sub Roots
     $self= tied(%$self)   if  ref($self)  &&  tied(%$self);
     @_  and  croak "Usage:  \$hashRef= \$key->Roots;";
     $self= $RegObj   unless  ref($self);
-    eval "\\%$self->{ROOTS}";
+    return eval "\\%$self->{ROOTS}";
 }
 
 
@@ -916,7 +941,7 @@ sub Tie
     if(  1 != @_  ||  ! ref($hRef)  ||  "$hRef" !~ /(^|=)HASH\(/  ) {
 	croak "Usage: \$key->Tie(\\\%hash);";
     }
-    tie %$hRef, ref($self), $self;
+    return  tie %$hRef, ref($self), $self;
 }
 
 
@@ -925,10 +950,10 @@ sub TiedRef
     my $self= shift(@_);
     $self= tied(%$self)   if  tied(%$self);
     my $hRef= @_ ? shift(@_) : {};
-    return wantarray ? () : undef   if  ! defined($self);
+    return ()   if  ! defined($self);
     $self->Tie($hRef);
     bless $hRef, ref($self);
-    $hRef;
+    return $hRef;
 }
 
 
@@ -942,7 +967,7 @@ sub _Flags
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBits= \$key->_Flags(\$newBits);";
     }
-    $oldFlags;
+    return $oldFlags;
 }
 
 
@@ -961,7 +986,7 @@ sub ArrayValues
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->ArrayValues(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -981,7 +1006,7 @@ sub TieValues
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->TieValues(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -1000,7 +1025,7 @@ sub FastDelete
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->FastDelete(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -1019,7 +1044,7 @@ sub SplitMultis
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->SplitMultis(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -1038,7 +1063,7 @@ sub DWordsToHex
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->DWordsToHex(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -1057,7 +1082,7 @@ sub FixSzNulls
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->FixSzNulls(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -1079,7 +1104,7 @@ sub DualTypes
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->DualTypes(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -1101,7 +1126,7 @@ sub DualBinVals
     } elsif(  0 != @_  ) {
 	croak "Usage:  \$oldBool= \$key->DualBinVals(\$newBool);";
     }
-    $oldFlag;
+    return $oldFlag;
 }
 
 
@@ -1172,34 +1197,53 @@ sub _parseTiedEnt
     my $off;
     if(  $delim x 2 eq substr($ent,0,2*$dlen)  &&  "NONE" eq $self->Handle  ) {
 	if(  0 <= ( $off= index( $ent, $delim x 2, 2*$dlen ) )  ) {
-	    (  substr( $ent, 0, $off ),  substr( $ent, 2*$dlen+$off )  );
+	    return(  substr( $ent, 0, $off ),  substr( $ent, 2*$dlen+$off )  );
 	} elsif(  $delim eq substr($ent,-$dlen)  ) {
-	    ( substr($ent,0,-$dlen) );
+	    return( substr($ent,0,-$dlen) );
 	} elsif(  2*$dlen <= ( $off= rindex( $ent, $delim ) )  ) {
-	    (  substr( $ent, 0, $off ),  undef,  substr( $ent, $dlen+$off )  );
+	    return(  substr( $ent, 0, $off ),
+	      undef,  substr( $ent, $dlen+$off )  );
 	} elsif(  $parent  ) {
-	    ();
+	    return();
 	} else {
-	    ( $ent );
+	    return( $ent );
 	}
     } elsif(  $delim eq substr($ent,0,$dlen)  &&  "NONE" ne $self->Handle  ) {
-	( undef, substr($ent,$dlen) );
+	return( undef, substr($ent,$dlen) );
     } elsif(  $self->{MEMBERS}  &&  $self->_MembersHash->{$ent}  ) {
-	( substr($ent,0,-$dlen) );
+	return( substr($ent,0,-$dlen) );
     } elsif(  0 <= ( $off= index( $ent, $delim x 2 ) )  ) {
-	(  substr( $ent, 0, $off ),  substr( $ent, 2*$dlen+$off ) );
+	return(  substr( $ent, 0, $off ),  substr( $ent, 2*$dlen+$off ) );
     } elsif(  $delim eq substr($ent,-$dlen)  ) {
 	if(  $parent
 	 &&  0 <= ( $off= rindex( $ent, $delim, length($ent)-2*$dlen ) )  ) {
-	    (  substr($ent,0,$off),  undef,  undef,
-	       substr($ent,$dlen+$off,-$dlen)  );
+	    return(  substr($ent,0,$off),
+	      undef,  undef,  substr($ent,$dlen+$off,-$dlen)  );
 	} else {
-	    ( substr($ent,0,-$dlen) );
+	    return( substr($ent,0,-$dlen) );
 	}
     } elsif(  0 <= ( $off= rindex( $ent, $delim ) )  ) {
-	(  substr( $ent, 0, $off ),  undef,  substr( $ent, $dlen+$off )  );
+	return(
+	  substr( $ent, 0, $off ),  undef,  substr( $ent, $dlen+$off )  );
     } else {
-	( undef, undef, $ent );
+	return( undef, undef, $ent );
+    }
+}
+
+
+sub _FetchValue
+{
+    my $self= shift( @_ );
+    my( $val, $createKey )= @_;
+    my( $data, $type );
+    if(  ( $data, $type )= $self->GetValue( $val )  ) {
+	return $self->ArrayValues ? [ $data, $type ]
+	       : wantarray        ? ( $data, $type )
+				  : $data;
+    } elsif(  $createKey  and  $data= $self->new($val)  ) {
+	return $data->TiedRef;
+    } else {
+	return ();
     }
 }
 
@@ -1215,33 +1259,25 @@ sub FETCH
 	if(  defined($self->{MEMBHASH})
 	 &&  $self->{MEMBHASH}->{$key.$delim}
 	 &&  0 <= index($key,$delim)  ) {
-	    return wantarray ? () : undef
+	    return ()
 	      unless  $sub= $self->new( $key,
 			      {"Delimiter"=>$self->OS_Delimiter} );
 	    $sub->Delimiter($delim);
 	} else {
-	    return wantarray ? () : undef
+	    return ()
 	      unless  $sub= $self->new( $key );
 	}
     } else {
 	$sub= $self;
     }
     if(  defined($val)  ) {
-	return $self->ArrayValues ? [ $sub->GetValue( $val ) ]
-				  : $sub->GetValue( $val );
+	return $sub->_FetchValue( $val );
     } elsif(  ! defined($ambig)  ) {
 	return $sub->TiedRef;
     } elsif(  defined($key)  ) {
 	return $sub->FETCH(  $ambig  );
-    } elsif(  "" eq $ambig  ) {
-	return $self->ArrayValues ? [ $sub->GetValue( $ambig ) ]
-				  : $sub->GetValue( $ambig );
     } else {
-	my $data= [ $sub->GetValue( $ambig ) ];
-	return $sub->ArrayValues ? $data : $$data[0]
-	  if  0 != @$data;
-	$data= $sub->new( $ambig );
-	return defined($data) ? $data->TiedRef : wantarray ? () : undef;
+	return $sub->_FetchValue( $ambig, "" ne $ambig );
     }
 }
 
@@ -1271,7 +1307,7 @@ sub DELETE
     my $old= 1;	# Value returned if FastDelete is set.
     if(  defined($key)
      &&  ( defined($val) || defined($ambig) || defined($subkey) )  ) {
-	return wantarray ? () : undef
+	return ()
 	  unless  $sub= $self->new( $key );
     } else {
 	$sub= $self;
@@ -1300,7 +1336,7 @@ sub DELETE
     } else {
 	croak "${PACK}->DELETE:  Key ($ent) can never be deleted";
     }
-    $old;
+    return $old;
 }
 
 
@@ -1322,7 +1358,7 @@ sub SetValue
 	    $type= REG_SZ;
 	}
     }
-    $type= Win32API::Registry::constant($type,0)   if  $type =~ /^REG_/;
+    $type= _constant($type,"registry value data type")   if  $type =~ /^REG_/;
     if(  REG_MULTI_SZ == $type  &&  "ARRAY" eq ref($data)  ) {
 	$data= join( "\0", @$data ) . "\0\0";
 	## $data= pack(  "a*" x (1+@$data),  map( $_."\0", @$data, "" )  );
@@ -1334,7 +1370,7 @@ sub SetValue
 	# We could to $data=pack("L",$data) for REG_DWORD but I see
 	# no nice way to always destinguish when to do this or not.
     }
-    $self->RegSetValueEx( $name, 0, $type, $data, length($data) );
+    return $self->RegSetValueEx( $name, 0, $type, $data, length($data) );
 }
 
 
@@ -1355,12 +1391,12 @@ sub StoreKey
     } else {
 	$self= $this->CreateKey( $subKey );
     }
-    return wantarray ? () : undef   if  ! defined($self);
+    return ()   if  ! defined($self);
     foreach $ent (  keys(%$data)  ) {
-	return wantarray ? () : undef
+	return ()
 	  unless  $self->STORE( $ent, $$data{$ent} );
     }
-    $self;
+    return $self;
 }
 
 
@@ -1377,7 +1413,7 @@ sub STORE
     my $sub;
     if(  defined($key)
      &&  ( defined($val) || defined($ambig) || defined($subkey) )  ) {
-	return wantarray ? () : undef
+	return ()
 	  unless  $sub= $self->new( $key );
     } else {
 	$sub= $self;
@@ -1413,7 +1449,7 @@ sub EXISTS
 {
     my $self= shift(@_);
     my $ent= shift(@_);
-    defined( $self->FETCH($ent) );
+    return defined( $self->FETCH($ent) );
 }
 
 
@@ -1422,7 +1458,7 @@ sub FIRSTKEY
     my $self= shift(@_);
     my $members= $self->_MemberNames;
     $self->{PREVIDX}= 0;
-    @{$members} ? $members->[0] : undef;
+    return @{$members} ? $members->[0] : undef;
 }
 
 
@@ -1439,7 +1475,7 @@ sub NEXTKEY
 	}
     }
     $self->{PREVIDX}= ++$idx;
-    $members->[$idx];
+    return $members->[$idx];
 }
 
 
@@ -1476,7 +1512,7 @@ sub DESTROY
 }
 
 
-use vars qw( @CreateKey_Opts %CreateKey_Opts, %KeyDispNames );
+use vars qw( @CreateKey_Opts %CreateKey_Opts %_KeyDispNames );
 @CreateKey_Opts= qw( Access Class Options Delimiter
 		     Disposition Security Volatile Backup );
 @CreateKey_Opts{@CreateKey_Opts}= (1) x @CreateKey_Opts;
@@ -1525,8 +1561,8 @@ sub CreateKey
     $subKey= join( $self->OS_Delimiter, @$subPath );
     $self->RegCreateKeyEx( $subKey, 0, $class, $flags, $sam,
 			   $secure, $handle, $$result )
-      or  return wantarray ? () : undef;
-    if(  ! ref($$result)  )  &&  $self->DualTypes  ) {
+      or  return ();
+    if(  ! ref($$result)  &&  $self->DualTypes  ) {
 	$$result= _DualVal( \%_KeyDispNames, $$result );
     }
     my $new= $self->_new( $handle, [ @{$self->_Path}, @{$subPath} ] );
@@ -1568,20 +1604,20 @@ sub Load
 	$subKey= "PerlTie:$$." . ++$Load_Cnt;
     }
     $this->RegLoadKey( $subKey, $file )
-      or  return wantarray ? () : undef;
+      or  return ();
     my $self= $this->new( $subKey, defined($opts) ? $opts : () );
     if(  ! defined( $self )  ) {
 	{ my $err= Win32::GetLastError();
-	#{ local( $^E );
+	#{ local( $^E ); #}
 	    $this->RegUnLoadKey( $subKey )  or  carp
 	      "Can't unload $subKey from ", $this->Path, ": ", _ErrMsg, "\n";
 	    Win32::SetLastError($err);
 	}
-	return wantarray ? () : undef;
+	return ();
     }
     $self->{UNLOADME}= [ $this, $subKey, $file ];
     $self= $self->TiedRef   if  $tied;
-    $self;
+    return $self;
 }
 
 
@@ -1595,7 +1631,7 @@ sub UnLoad
       or  croak "${PACK}->UnLoad called on a key which was not Load()ed";
     my( $obj, $subKey, $file )= @$unload;
     $self->RegCloseKey;
-    Win32API::Registry::RegUnLoadKey( $obj->Handle, $subKey );
+    return Win32API::Registry::RegUnLoadKey( $obj->Handle, $subKey );
 }
 
 
@@ -1603,7 +1639,7 @@ sub AllowSave
 {
     my $self= shift(@_);
     $self= tied(%$self)   if  tied(%$self);
-    $self->AllowPriv( "SeBackupPrivilege", @_ );
+    return $self->AllowPriv( "SeBackupPrivilege", @_ );
 }
 
 
@@ -1611,7 +1647,7 @@ sub AllowLoad
 {
     my $self= shift(@_);
     $self= tied(%$self)   if  tied(%$self);
-    $self->AllowPriv( "SeRestorePrivilege", @_ );
+    return $self->AllowPriv( "SeRestorePrivilege", @_ );
 }
 
 

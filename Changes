@@ -1,5 +1,16 @@
 Revision history for Perl extension Win32::TieRegistry.
 
+0.23  Sat Jul  3 00:06:20 1999
+	- Fixed two embarrassing typographical errors.
+	- Using invalid REG_* or KEY_* constant as string now detected.
+	- With ArrayValues(1), $key->{NonExistantValueName} used to return
+	  C<[]> but now returns C<undef> [or C<()>].  Old code like
+	  C<if( $reg->{value}->[0] )> should still work but now can be
+	  improved to C<if( $reg->{value} )> [which used to always be true
+	  when the ArrayValues option was enabled].
+	- All implicit C<return>s made explicit [C<$val;> to C<return $val;>].
+	- Simplified C<return wantarray ? () : undef> to C<return ()>.
+
 0.22  Fri Apr  9 22:13:52 1999
 	- C<new Win32::TieRegistry> and "Win32::TieRegistry->new" now work.
 	- CreateKey()'s "disposition" argument now can get its string value
