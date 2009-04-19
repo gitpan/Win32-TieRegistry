@@ -1,23 +1,26 @@
+use 5.006;
+use strict;
 use ExtUtils::MakeMaker;
 
-# This module is only for Win32
-unless ( $^O eq 'MSWin32' or $^O eq 'cygwin' ) {
-	print "Win32::TieRegistry is only applicable to Win32 and cygwin\n";
-	print "Install Result: N/A\n";
-	exit(255);
-}
+# Don't prevent this running on Win32.
+# THIS distribution is inherantly platform-neutral, but the underlying
+# dependency is not. Allow non-Win32 platforms to fail on our dependency,
+# instead of on this module. This allows any unusual cases like Wine
+# (that are able to get the dependency installed) to install this ok.
 
 WriteMakefile(
 	'NAME'         => 'Win32::TieRegistry',
-	'VERSION_FROM' => 'TieRegistry.pm', # finds $VERSION
-	'LIBS'         => [''],             # e.g., '-lm'
-	'DEFINE'       => '',               # e.g., '-DHAVE_SOMETHING'
-	'INC'          => '',               # e.g., '-I/usr/include/other'
+	'ABSTRACT'     => 'Manipulate the Win32 Registry',
+	'VERSION_FROM' => 'lib/Win32/TieRegistry.pm',
+	'LICENSE'      => 'perl',
 	'PREREQ_PM'    => {
 		'Carp'               => 0,
 		'Tie::Hash'          => 0,
-		# If we are upgrading this, then we want to also
-		# force the upgrade of the underlying module.
+		'Test::More'         => '0.42',
+
+		# If we are upgrading Win32::TieRegistry,
+		# then we want to also force the upgrade
+		# of the underlying module.
 		'Win32API::Registry' => '0.24',
-		},
+	},
 );

@@ -1,13 +1,22 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         Win32-TieRegistry
-version:      0.25
-version_from: TieRegistry.pm
-installdirs:  site
+--- #YAML:1.0
+name:               Win32-TieRegistry
+version:            0.26
+abstract:           Manipulate the Win32 Registry
+author:  []
+license:            perl
+distribution_type:  module
+configure_requires:
+    ExtUtils::MakeMaker:  0
 requires:
-    Carp:                          0
-    Tie::Hash:                     0
-    Win32API::Registry:            0.24
-
-distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.30
+    Carp:                0
+    Test::More:          0.42
+    Tie::Hash:           0
+    Win32API::Registry:  0.24
+no_index:
+    directory:
+        - t
+        - inc
+generated_by:       ExtUtils::MakeMaker version 6.48
+meta-spec:
+    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
+    version:  1.4
